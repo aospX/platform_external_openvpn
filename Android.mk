@@ -75,6 +75,7 @@ common_SRC_FILES:= \
 	missing.c
 
 #common_CFLAGS += -DNO_WINDOWS_BRAINDEATH 
+common_CFLAGS += -DANDROID_CHANGES
 
 common_C_INCLUDES += \
 	external/openssl \
