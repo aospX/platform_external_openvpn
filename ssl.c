@@ -1297,8 +1297,8 @@ info_callback (INFO_CALLBACK_SSL_CONST SSL * s, int where, int ret)
 static BIO *BIO_from_keystore(const char *ca_string)
 {
 	BIO *bio = NULL;
-	char *value, *key;
-	int size;
+	char value[KEYSTORE_MESSAGE_SIZE];
+	char *key;
 
 	if (strncmp(ca_string, INLINE_ANDROID_TAG,
 		    sizeof(INLINE_ANDROID_TAG) - 1) != 0)
@@ -1306,13 +1306,12 @@ static BIO *BIO_from_keystore(const char *ca_string)
 
 	key = &ca_string[sizeof(INLINE_ANDROID_TAG) - 1];
 
-	value = keystore_get(key, &size);
-	if (value)
+	int size = keystore_get(key, value);
+	if (size > -1)
 	  {
 	    bio = BIO_new(BIO_s_mem());
 	    if (bio)
 	      BIO_write(bio, value, size);
-	    free(value);
 	  }
 	return bio;
 }
