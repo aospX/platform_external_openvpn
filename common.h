@@ -83,6 +83,14 @@ typedef unsigned long ptr_type;
  * A sort of pseudo-filename for data provided inline within
  * the configuration file.
  */
+#ifdef ANDROID_CHANGES
+#if !ENABLE_INLINE_FILES
+#undef ENABLE_INLINE_FILES
+#define ENABLE_INLINE_FILES 1
+#endif
+#define INLINE_ANDROID_TAG "[[ANDROID]]"
+#endif
+
 #if ENABLE_INLINE_FILES
 #define INLINE_FILE_TAG "[[INLINE]]"
 #endif

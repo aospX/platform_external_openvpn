@@ -53,6 +53,15 @@
 #include "cryptoapi.h"
 #endif
 
+#ifdef ANDROID_CHANGES
+/* Some idiot has allowed two different definitions of LOG_PRI in
+ * the android headers.  one from standard syslog, the other from culog
+ * since keystore uses culog, eliminate any previous syslog one to prevent
+ * a compile error. */
+#undef LOG_PRI
+#include "keystore_get.h"
+#endif
+
 #include "memdbg.h"
 
 #ifndef ENABLE_OCC
@@ -1284,6 +1293,31 @@ info_callback (INFO_CALLBACK_SSL_CONST SSL * s, int where, int ret)
     }
 }
 
+#ifdef ANDROID_CHANGES
+static BIO *BIO_from_keystore(const char *ca_string)
+{
+	BIO *bio = NULL;
+	char *value, *key;
+	int size;
+
+	if (strncmp(ca_string, INLINE_ANDROID_TAG,
+		    sizeof(INLINE_ANDROID_TAG) - 1) != 0)
+	  return BIO_new_mem_buf ((char *)ca_string, -1);
+
+	key = &ca_string[sizeof(INLINE_ANDROID_TAG) - 1];
+
+	value = keystore_get(key, &size);
+	if (value)
+	  {
+	    bio = BIO_new(BIO_s_mem());
+	    if (bio)
+	      BIO_write(bio, value, size);
+	    free(value);
+	  }
+	return bio;
+}
+#endif
+
 #if ENABLE_INLINE_FILES
 
 static int
@@ -1294,7 +1328,11 @@ use_inline_load_verify_locations (SSL_CTX *ctx, const char *ca_string)
   BIO *in = NULL;
   int ret = 0;
 
+#ifdef ANDROID_CHANGES
+  in = BIO_from_keystore(ca_string);
+#else
   in = BIO_new_mem_buf ((char *)ca_string, -1);
+#endif
   if (!in)
     goto err;
 
@@ -1346,7 +1384,11 @@ use_inline_load_client_CA_file (SSL_CTX *ctx, const char *ca_string)
 
   sk=sk_X509_NAME_new(xname_cmp);
 
+#ifdef ANDROID_CHANGES
+  in = BIO_from_keystore(ca_string);
+#else
   in = BIO_new_mem_buf ((char *)ca_string, -1);
+#endif
   if (!in)
     goto err;
 
@@ -1397,7 +1439,11 @@ use_inline_certificate_file (SSL_CTX *ctx, const char *cert_string)
   X509 *x = NULL;
   int ret = 0;
 
+#ifdef ANDROID_CHANGES
+  in = BIO_from_keystore(cert_string);
+#else
   in = BIO_new_mem_buf ((char *)cert_string, -1);
+#endif
   if (!in)
     goto end;
 
@@ -1425,7 +1471,11 @@ use_inline_PrivateKey_file (SSL_CTX *ctx, const char *key_string)
   EVP_PKEY *pkey = NULL;
   int ret = 0;
 
+#ifdef ANDROID_CHANGES
+  in = BIO_from_keystore(key_string);
+#else
   in = BIO_new_mem_buf ((char *)key_string, -1);
+#endif
   if (!in)
     goto end;
 

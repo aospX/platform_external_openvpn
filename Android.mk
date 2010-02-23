@@ -81,7 +81,8 @@ common_C_INCLUDES += \
 	external/openssl \
 	external/openssl/include \
 	external/openssl/crypto \
-	external/lzo/include
+	external/lzo/include \
+	frameworks/base/cmds/keystore
 
 common_SHARED_LIBRARIES := 
 
