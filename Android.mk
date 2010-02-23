@@ -84,7 +84,7 @@ common_C_INCLUDES += \
 	external/lzo/include \
 	frameworks/base/cmds/keystore
 
-common_SHARED_LIBRARIES := 
+common_SHARED_LIBRARIES := libcutils 
 
 ifneq ($(TARGET_SIMULATOR),true)
 	common_SHARED_LIBRARIES += libdl
