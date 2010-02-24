@@ -98,13 +98,13 @@
 #define HAVE_DUP2 1
 
 /* Define to 1 if you have the `ENGINE_cleanup' function. */
-#define HAVE_ENGINE_CLEANUP 1
+#define HAVE_ENGINE_CLEANUP 0
 
 /* Define to 1 if you have the `ENGINE_load_builtin_engines' function. */
-#define HAVE_ENGINE_LOAD_BUILTIN_ENGINES 1
+#define HAVE_ENGINE_LOAD_BUILTIN_ENGINES 0
 
 /* Define to 1 if you have the `ENGINE_register_all_complete' function. */
-#define HAVE_ENGINE_REGISTER_ALL_COMPLETE 1
+#define HAVE_ENGINE_REGISTER_ALL_COMPLETE 0
 
 /* epoll_create function is defined */
 #define HAVE_EPOLL_CREATE 1
@@ -242,7 +242,7 @@
 #define HAVE_OPENLOG 1
 
 /* Define to 1 if you have the <openssl/engine.h> header file. */
-#define HAVE_OPENSSL_ENGINE_H 1
+#define HAVE_OPENSSL_ENGINE_H 0
 
 /* Define to 1 if you have the `poll' function. */
 #define HAVE_POLL 1

@@ -31,11 +31,7 @@
 /*
  * Does our OpenSSL library support crypto hardware acceleration?
  */
-#if defined(HAVE_OPENSSL_ENGINE_H) && defined(HAVE_ENGINE_LOAD_BUILTIN_ENGINES) && defined(HAVE_ENGINE_REGISTER_ALL_COMPLETE) && defined(HAVE_ENGINE_CLEANUP)
-#define CRYPTO_ENGINE 1
-#else
 #define CRYPTO_ENGINE 0
-#endif
 
 #include <openssl/objects.h>
 #include <openssl/rand.h>
