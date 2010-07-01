@@ -1306,7 +1306,7 @@ static BIO *BIO_from_keystore(const char *ca_string)
 
 	key = &ca_string[sizeof(INLINE_ANDROID_TAG) - 1];
 
-	int size = keystore_get(key, value);
+	int size = keystore_get(key, strlen(key), value);
 	if (size > -1)
 	  {
 	    bio = BIO_new(BIO_s_mem());
