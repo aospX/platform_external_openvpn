@@ -337,7 +337,7 @@ establish_http_proxy_passthru (struct http_proxy_info *p,
     get_user_pass_http (p, false);
 
   /* format HTTP CONNECT message */
-  openvpn_snprintf (buf, sizeof(buf), "CONNECT %s:%d HTTP/%s\r\nHOST: %s: %d",
+  openvpn_snprintf (buf, sizeof(buf), "CONNECT %s:%d HTTP/%s\r\nHOST: %s:%d",
 		    host,
 		    port,
 		    p->options.http_version,
