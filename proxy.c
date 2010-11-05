@@ -658,10 +658,12 @@ establish_http_proxy_passthru (struct http_proxy_info *p,
           /* now send the phase 3 reply */
 
           /* format HTTP CONNECT message */
-          openvpn_snprintf (buf, sizeof(buf), "CONNECT %s:%d HTTP/%s",
+          openvpn_snprintf (buf, sizeof(buf), "CONNECT %s:%d HTTP/%s\r\nHOST: %s:%d",
 			    host,
 			    port,
-			    p->options.http_version);
+			    p->options.http_version,
+			    host,
+			    port);
 
           msg (D_PROXY, "Send to HTTP proxy: '%s'", buf);
 
