@@ -3996,7 +3996,7 @@ add_option (struct options *options,
 		    {
 		      if (options->inetd != -1)
 			{
-			  msg (msglevel, opterr);
+			  msg ("%s", msglevel, opterr);
 			  goto err;
 			}
 		      else
@@ -4006,7 +4006,7 @@ add_option (struct options *options,
 		    {
 		      if (options->inetd != -1)
 			{
-			  msg (msglevel, opterr);
+			  msg ("%s", msglevel, opterr);
 			  goto err;
 			}
 		      else
@@ -4016,7 +4016,7 @@ add_option (struct options *options,
 		    {
 		      if (name != NULL)
 			{
-			  msg (msglevel, opterr);
+			  msg ("%s", msglevel, opterr);
 			  goto err;
 			}
 		      name = p[z];
