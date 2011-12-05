@@ -26,6 +26,7 @@
 #define BASIC_H
 
 /* bool definitions */
+#include<stdbool.h>
 #ifndef bool
 #define bool int
 #endif
