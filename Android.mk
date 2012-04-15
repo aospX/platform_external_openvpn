@@ -7,7 +7,7 @@ LOCAL_PATH:= $(call my-dir)
 # in tun.c replace /dev/net/tun with /dev/tun
 
 common_SRC_FILES:= \
-        base64.c base64.h \
+	base64.c base64.h \
 	basic.h \
 	buffer.c buffer.h \
 	circ_list.h \
@@ -18,7 +18,7 @@ common_SRC_FILES:= \
 	error.c error.h \
 	event.c event.h \
 	fdmisc.c fdmisc.h \
-        forward.c forward.h forward-inline.h \
+	forward.c forward.h forward-inline.h \
 	fragment.c fragment.h \
 	gremlin.c gremlin.h \
 	helper.c helper.h \
@@ -26,12 +26,12 @@ common_SRC_FILES:= \
 	lladdr.c lladdr.h \
 	init.c init.h \
 	integer.h \
-        interval.c interval.h \
+	interval.c interval.h \
 	list.c list.h \
 	lzo.c lzo.h \
 	manage.c manage.h \
 	mbuf.c mbuf.h \
-        memdbg.h \
+	memdbg.h \
 	misc.c misc.h \
 	mroute.c mroute.h \
 	mss.c mss.h \
@@ -39,7 +39,7 @@ common_SRC_FILES:= \
 	mtu.c mtu.h \
 	mudp.c mudp.h \
 	multi.c multi.h \
-        ntlm.c ntlm.h \
+	ntlm.c ntlm.h \
 	occ.c occ.h occ-inline.h \
 	pkcs11.c pkcs11.h \
 	openvpn.c openvpn.h \
@@ -55,7 +55,7 @@ common_SRC_FILES:= \
 	proto.c proto.h \
 	proxy.c proxy.h \
 	ieproxy.h ieproxy.c \
-        ps.c ps.h \
+	ps.c ps.h \
 	push.c push.h \
 	pushlist.h \
 	reliable.c reliable.h \
@@ -69,13 +69,11 @@ common_SRC_FILES:= \
 	ssl.c ssl.h \
 	status.c status.h \
 	syshead.h \
-	thread.c thread.h \
 	tun.c tun.h \
 	win32.h win32.c \
 	cryptoapi.h cryptoapi.c \
 	missing.c
 
-#common_CFLAGS += -DNO_WINDOWS_BRAINDEATH 
 common_CFLAGS += -DANDROID_CHANGES
 
 common_C_INCLUDES += \
@@ -85,7 +83,7 @@ common_C_INCLUDES += \
 	external/lzo/include \
 	frameworks/base/cmds/keystore
 
-common_SHARED_LIBRARIES := libcutils 
+common_SHARED_LIBRARIES := libcutils
 
 ifneq ($(TARGET_SIMULATOR),true)
 	common_SHARED_LIBRARIES += libdl

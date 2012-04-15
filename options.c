@@ -7,6 +7,9 @@
  *
  *  Copyright (C) 2002-2010 OpenVPN Technologies, Inc. <sales@openvpn.net>
  *
+ *  Additions for eurephia plugin done by:
+ *         David Sommerseth <dazo@users.sourceforge.net> Copyright (C) 2009
+ *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2
  *  as published by the Free Software Foundation.
@@ -45,6 +48,9 @@
 #include "pool.h"
 #include "helper.h"
 #include "manage.h"
+#include "forward.h"
+#include "configure.h"
+#include <ctype.h>
 
 #include "memdbg.h"
 
@@ -67,11 +73,11 @@ const char title_string[] =
 #ifdef PRODUCT_TAP_DEBUG
   " [TAPDBG]"
 #endif
-#ifdef USE_PTHREAD
-  " [PTHREAD]"
-#endif
 #ifdef ENABLE_PKCS11
   " [PKCS11]"
+#endif
+#ifdef ENABLE_EUREPHIA
+  " [eurephia]"
 #endif
   " built on " __DATE__
 ;
@@ -94,12 +100,14 @@ static const char usage_message[] =
   "--mode m        : Major mode, m = 'p2p' (default, point-to-point) or 'server'.\n"
   "--proto p       : Use protocol p for communicating with peer.\n"
   "                  p = udp (default), tcp-server, or tcp-client\n"
+  "--proto-force p : only consider protocol p in list of connection profiles.\n"
   "--connect-retry n : For --proto tcp-client, number of seconds to wait\n"
   "                    between connection retries (default=%d).\n"
   "--connect-timeout n : For --proto tcp-client, connection timeout (in seconds).\n"
   "--connect-retry-max n : Maximum connection attempt retries, default infinite.\n"
 #ifdef GENERAL_PROXY_SUPPORT
   "--auto-proxy    : Try to sense proxy settings (or lack thereof) automatically.\n"
+  "--show-proxy-settings : Show sensed proxy settings.\n"
 #endif
 #ifdef ENABLE_HTTP_PROXY
   "--http-proxy s p [up] [auth] : Connect to remote host\n"
@@ -119,8 +127,11 @@ static const char usage_message[] =
   "                  AGENT user-agent\n"
 #endif
 #ifdef ENABLE_SOCKS
-  "--socks-proxy s [p]: Connect to remote host through a Socks5 proxy at address\n"
-  "                  s and port p (default port = 1080).\n"
+  "--socks-proxy s [p] [up] : Connect to remote host through a Socks5 proxy at\n"
+  "                  address s and port p (default port = 1080).\n"
+  "                  If proxy authentication is required,\n"
+  "                  up is a file containing username/password on 2 lines, or\n"
+  "                  'stdin' to prompt for console.\n"
   "--socks-proxy-retry : Retry indefinitely on Socks proxy errors.\n"
 #endif
   "--resolv-retry n: If hostname resolve fails for --remote, retry\n"
@@ -287,13 +298,6 @@ static const char usage_message[] =
   "--suppress-timestamps : Don't log timestamps to stdout/stderr.\n"
   "--writepid file : Write main process ID to file.\n"
   "--nice n        : Change process priority (>0 = lower, <0 = higher).\n"
-#if 0
-#ifdef USE_PTHREAD
-  "--nice-work n   : Change thread priority of work thread.  The work\n"
-  "                  thread is used for background processing such as\n"
-  "                  RSA key number crunching.\n"
-#endif
-#endif
   "--echo [parms ...] : Echo parameters to log output.\n"
   "--verb n        : Set output verbosity to n (default=%d):\n"
   "                  (Level 3 is recommended if you want a good summary\n"
@@ -409,7 +413,7 @@ static const char usage_message[] =
   "--client-disconnect cmd : Run script cmd on client disconnection.\n"
   "--client-config-dir dir : Directory for custom client config files.\n"
   "--ccd-exclusive : Refuse connection unless custom client config is found.\n"
-  "--tmp-dir dir   : Temporary directory, used for --client-connect return file.\n"
+  "--tmp-dir dir   : Temporary directory, used for --client-connect return file and plugin communication.\n"
   "--hash-size r v : Set the size of the real address hash table to r and the\n"
   "                  virtual address table to v.\n"
   "--bcast-buffers n : Allocate n broadcast buffers.\n"
@@ -503,6 +507,10 @@ static const char usage_message[] =
   "--key file      : Local private key in .pem format.\n"
   "--pkcs12 file   : PKCS#12 file containing local private key, local certificate\n"
   "                  and optionally the root CA certificate.\n"
+#ifdef ENABLE_X509ALTUSERNAME
+  "--x509-username-field : Field used in x509 certificate to be username.\n"
+  "                        Default is CN.\n"
+#endif
 #ifdef WIN32
   "--cryptoapicert select-string : Load the certificate and private key from the\n"
   "                  Windows Certificate System Store.\n"
@@ -533,6 +541,9 @@ static const char usage_message[] =
   "                  tests of certification.  cmd should return 0 to allow\n"
   "                  TLS handshake to proceed, or 1 to fail.  (cmd is\n"
   "                  executed as 'cmd certificate_depth X509_NAME_oneline')\n"
+  "--tls-export-cert [directory] : Get peer cert in PEM format and store it \n"
+  "                  in an openvpn temporary file in [directory]. Peer cert is \n"
+  "                  stored before tls-verify script execution and deleted after.\n"
   "--tls-remote x509name: Accept connections only from a host with X509 name\n"
   "                  x509name. The remote host must also pass all other tests\n"
   "                  of verification.\n"
@@ -693,6 +704,7 @@ init_options (struct options *o, const bool init_gc)
   o->route_delay_window = 30;
   o->max_routes = MAX_ROUTES_DEFAULT;
   o->resolve_retry_seconds = RESOLV_RETRY_INFINITE;
+  o->proto_force = -1;
 #ifdef ENABLE_OCC
   o->occ = true;
 #endif
@@ -720,9 +732,6 @@ init_options (struct options *o, const bool init_gc)
   o->tuntap_options.dhcp_lease_time = 31536000; /* one year */
   o->tuntap_options.dhcp_masq_offset = 0;       /* use network address as internal DHCP server address */
   o->route_method = ROUTE_METHOD_ADAPTIVE;
-#endif
-#ifdef USE_PTHREAD
-  o->n_threads = 1;
 #endif
 #if P2MP_SERVER
   o->real_hash_size = 256;
@@ -755,11 +764,26 @@ init_options (struct options *o, const bool init_gc)
   o->renegotiate_seconds = 3600;
   o->handshake_window = 60;
   o->transition_window = 3600;
+#ifdef ENABLE_X509ALTUSERNAME
+  o->x509_username_field = X509_USERNAME_FIELD_DEFAULT;
 #endif
-#endif
+#endif /* USE_SSL */
+#endif /* USE_CRYPTO */
 #ifdef ENABLE_PKCS11
   o->pkcs11_pin_cache_period = -1;
 #endif			/* ENABLE_PKCS11 */
+
+  /* Set default --tmp-dir */
+#ifdef WIN32
+  /* On Windows, find temp dir via enviroment variables */
+  o->tmp_dir = win_get_tempdir();
+#else
+  /* Non-windows platforms use $TMPDIR, and if not set, default to '/tmp' */
+  o->tmp_dir = getenv("TMPDIR");
+  if( !o->tmp_dir ) {
+          o->tmp_dir = "/tmp";
+  }
+#endif /* WIN32 */
 }
 
 void
@@ -872,9 +896,6 @@ is_persist_option (const struct options *o)
       || o->persist_key
       || o->persist_local_ip
       || o->persist_remote_ip
-#ifdef USE_PTHREAD
-      || o->n_threads >= 2
-#endif
     ;
 }
 
@@ -1333,6 +1354,7 @@ show_settings (const struct options *o)
 #endif
   SHOW_STR (cipher_list);
   SHOW_STR (tls_verify);
+  SHOW_STR (tls_export_cert);
   SHOW_STR (tls_remote);
   SHOW_STR (crl_file);
   SHOW_INT (ns_cert_type);
@@ -1907,8 +1929,6 @@ options_postprocess_verify_ce (const struct options *options, const struct conne
 	msg (M_USAGE, "--client-connect requires --mode server");
       if (options->client_disconnect_script)
 	msg (M_USAGE, "--client-disconnect requires --mode server");
-      if (options->tmp_dir)
-	msg (M_USAGE, "--tmp-dir requires --mode server");
       if (options->client_config_dir || options->ccd_exclusive)
 	msg (M_USAGE, "--client-config-dir/--ccd-exclusive requires --mode server");
       if (options->enable_c2c)
@@ -2061,6 +2081,7 @@ options_postprocess_verify_ce (const struct options *options, const struct conne
       MUST_BE_UNDEF (pkcs12_file);
       MUST_BE_UNDEF (cipher_list);
       MUST_BE_UNDEF (tls_verify);
+      MUST_BE_UNDEF (tls_export_cert);
       MUST_BE_UNDEF (tls_remote);
       MUST_BE_UNDEF (tls_timeout);
       MUST_BE_UNDEF (renegotiate_bytes);
@@ -2129,6 +2150,10 @@ options_postprocess_mutate_ce (struct options *o, struct connection_entry *ce)
 
   if (!ce->bind_local)
     ce->local_port = 0;
+
+  /* if protocol forcing is enabled, disable all protocols except for the forced one */
+  if (o->proto_force >= 0 && is_proto_tcp(o->proto_force) != is_proto_tcp(ce->proto))
+    ce->flags |= CE_DISABLED;
 }
 
 static void
@@ -2903,6 +2928,14 @@ usage_version (void)
   msg (M_INFO|M_NOPREFIX, "%s", title_string);
   msg (M_INFO|M_NOPREFIX, "Originally developed by James Yonan");
   msg (M_INFO|M_NOPREFIX, "Copyright (C) 2002-2010 OpenVPN Technologies, Inc. <sales@openvpn.net>");
+#ifndef ENABLE_SMALL
+#ifdef CONFIGURE_CALL
+  msg (M_INFO|M_NOPREFIX, "\n%s\n", CONFIGURE_CALL);
+#endif
+#ifdef CONFIGURE_DEFINES
+  msg (M_INFO|M_NOPREFIX, "Compile time defines: %s", CONFIGURE_DEFINES);
+#endif
+#endif
   openvpn_exit (OPENVPN_EXIT_STATUS_USAGE); /* exit point */
 }
 
@@ -2937,6 +2970,7 @@ positive_atoi (const char *str)
   return i < 0 ? 0 : i;
 }
 
+#ifdef WIN32  /* This function is only used when compiling on Windows */
 static unsigned int
 atou (const char *str)
 {
@@ -2944,6 +2978,7 @@ atou (const char *str)
   sscanf (str, "%u", &val);
   return val;
 }
+#endif
 
 static inline bool
 space (unsigned char c)
@@ -3485,6 +3520,15 @@ msglevel_forward_compatible (struct options *options, const int msglevel)
 }
 
 static void
+warn_multiple_script (const char *script, const char *type) {
+      if (script) {
+	msg (M_WARN, "Multiple --%s scripts defined.  "
+	     "The previously configured script is overridden.", type);
+      }
+}
+
+
+static void
 add_option (struct options *options,
 	    char *p[],
 	    const char *file,
@@ -3884,6 +3928,7 @@ add_option (struct options *options,
       VERIFY_PERMISSION (OPT_P_SCRIPT);
       if (!no_more_than_n_args (msglevel, p, 2, NM_QUOTE_HINT))
 	goto err;
+      warn_multiple_script (options->ipchange, "ipchange");
       options->ipchange = string_substitute (p[1], ',', ' ', &options->gc);
     }
   else if (streq (p[0], "float"))
@@ -3930,6 +3975,7 @@ add_option (struct options *options,
       VERIFY_PERMISSION (OPT_P_SCRIPT);
       if (!no_more_than_n_args (msglevel, p, 2, NM_QUOTE_HINT))
 	goto err;
+      warn_multiple_script (options->up_script, "up");
       options->up_script = p[1];
     }
   else if (streq (p[0], "down") && p[1])
@@ -3937,6 +3983,7 @@ add_option (struct options *options,
       VERIFY_PERMISSION (OPT_P_SCRIPT);
       if (!no_more_than_n_args (msglevel, p, 2, NM_QUOTE_HINT))
 	goto err;
+      warn_multiple_script (options->down_script, "down");
       options->down_script = p[1];
     }
   else if (streq (p[0], "down-pre"))
@@ -3996,7 +4043,7 @@ add_option (struct options *options,
 		    {
 		      if (options->inetd != -1)
 			{
-			  msg ("%s", msglevel, opterr);
+			  msg (msglevel, "%s", opterr);
 			  goto err;
 			}
 		      else
@@ -4006,7 +4053,7 @@ add_option (struct options *options,
 		    {
 		      if (options->inetd != -1)
 			{
-			  msg ("%s", msglevel, opterr);
+			  msg (msglevel, "%s", opterr);
 			  goto err;
 			}
 		      else
@@ -4016,7 +4063,7 @@ add_option (struct options *options,
 		    {
 		      if (name != NULL)
 			{
-			  msg ("%s", msglevel, opterr);
+			  msg (msglevel, "%s", opterr);
 			  goto err;
 			}
 		      name = p[z];
@@ -4192,26 +4239,6 @@ add_option (struct options *options,
       goto err;
 #endif
     }
-#ifdef USE_PTHREAD
-  else if (streq (p[0], "nice-work") && p[1])
-    {
-      VERIFY_PERMISSION (OPT_P_NICE);
-      options->nice_work = atoi (p[1]);
-    }
-  else if (streq (p[0], "threads") && p[1])
-    {
-      int n_threads;
-
-      VERIFY_PERMISSION (OPT_P_GENERAL);
-      n_threads = positive_atoi (p[1]);
-      if (n_threads < 1)
-	{
-	  msg (msglevel, "--threads parameter must be at least 1");
-	  goto err;
-	}
-      options->n_threads = n_threads;
-    }
-#endif
   else if (streq (p[0], "shaper") && p[1])
     {
 #ifdef HAVE_GETTIMEOFDAY
@@ -4252,7 +4279,7 @@ add_option (struct options *options,
 
       VERIFY_PERMISSION (OPT_P_GENERAL|OPT_P_CONNECTION);
       port = atoi (p[1]);
-      if (!legal_ipv4_port (port))
+      if ((port != 0) && !legal_ipv4_port (port))
 	{
 	  msg (msglevel, "Bad local port number: %s", p[1]);
 	  goto err;
@@ -4310,6 +4337,19 @@ add_option (struct options *options,
 	  goto err;
 	}
       options->ce.proto = proto;
+    }
+  else if (streq (p[0], "proto-force") && p[1])
+    {
+      int proto_force;
+      VERIFY_PERMISSION (OPT_P_GENERAL);
+      proto_force = ascii2proto (p[1]);
+      if (proto_force < 0)
+	{
+	  msg (msglevel, "Bad --proto-force protocol: '%s'", p[1]);
+	  goto err;
+	}
+      options->proto_force = proto_force;
+      options->force_connection_list = true;
     }
 #ifdef GENERAL_PROXY_SUPPORT
   else if (streq (p[0], "auto-proxy"))
@@ -4452,6 +4492,7 @@ add_option (struct options *options,
 	  options->ce.socks_proxy_port = 1080;
 	}
       options->ce.socks_proxy_server = p[1];
+      options->ce.socks_proxy_authfile = p[3]; /* might be NULL */
     }
   else if (streq (p[0], "socks-proxy-retry"))
     {
@@ -4605,6 +4646,7 @@ add_option (struct options *options,
       VERIFY_PERMISSION (OPT_P_SCRIPT);
       if (!no_more_than_n_args (msglevel, p, 2, NM_QUOTE_HINT))
 	goto err;
+      warn_multiple_script (options->route_script, "route-up");
       options->route_script = p[1];
     }
   else if (streq (p[0], "route-noexec"))
@@ -4934,6 +4976,7 @@ add_option (struct options *options,
 	  msg (msglevel, "--auth-user-pass-verify requires a second parameter ('via-env' or 'via-file')");
 	  goto err;
 	}
+      warn_multiple_script (options->auth_user_pass_verify_script, "auth-user-pass-verify");
       options->auth_user_pass_verify_script = p[1];
     }
   else if (streq (p[0], "client-connect") && p[1])
@@ -4941,6 +4984,7 @@ add_option (struct options *options,
       VERIFY_PERMISSION (OPT_P_SCRIPT);
       if (!no_more_than_n_args (msglevel, p, 2, NM_QUOTE_HINT))
 	goto err;
+      warn_multiple_script (options->client_connect_script, "client-connect");
       options->client_connect_script = p[1];
     }
   else if (streq (p[0], "client-disconnect") && p[1])
@@ -4948,6 +4992,7 @@ add_option (struct options *options,
       VERIFY_PERMISSION (OPT_P_SCRIPT);
       if (!no_more_than_n_args (msglevel, p, 2, NM_QUOTE_HINT))
 	goto err;
+      warn_multiple_script (options->client_disconnect_script, "client-disconnect");
       options->client_disconnect_script = p[1];
     }
   else if (streq (p[0], "learn-address") && p[1])
@@ -4955,6 +5000,7 @@ add_option (struct options *options,
       VERIFY_PERMISSION (OPT_P_SCRIPT);
       if (!no_more_than_n_args (msglevel, p, 2, NM_QUOTE_HINT))
 	goto err;
+      warn_multiple_script (options->learn_address_script, "learn-address");
       options->learn_address_script = p[1];
     }
   else if (streq (p[0], "tmp-dir") && p[1])
@@ -5308,7 +5354,13 @@ add_option (struct options *options,
       VERIFY_PERMISSION (OPT_P_IPWIN32);
       options->tuntap_options.register_dns = true;
     }
-  else if (streq (p[0], "rdns-internal")) /* standalone method for internal use */
+  else if (streq (p[0], "rdns-internal"))
+     /* standalone method for internal use
+      *
+      * (if --register-dns is set, openvpn needs to call itself in a
+      *  sub-process to execute the required functions in a non-blocking
+      *  way, and uses --rdns-internal to signal that to itself)
+      */
     {
       VERIFY_PERMISSION (OPT_P_GENERAL);
       set_debug_level (options->verbosity, SDL_CONSTRAIN);
@@ -5680,6 +5732,12 @@ add_option (struct options *options,
     {
       VERIFY_PERMISSION (OPT_P_GENERAL);
       options->pkcs12_file = p[1];
+#if ENABLE_INLINE_FILES
+      if (streq (p[1], INLINE_FILE_TAG) && p[2])
+	{
+	  options->pkcs12_file_inline = p[2];
+	}
+#endif
     }
   else if (streq (p[0], "askpass"))
     {
@@ -5728,7 +5786,13 @@ add_option (struct options *options,
       VERIFY_PERMISSION (OPT_P_SCRIPT);
       if (!no_more_than_n_args (msglevel, p, 2, NM_QUOTE_HINT))
 	goto err;
+      warn_multiple_script (options->tls_verify, "tls-verify");
       options->tls_verify = string_substitute (p[1], ',', ' ', &options->gc);
+    }
+  else if (streq (p[0], "tls-export-cert") && p[1])
+    {
+      VERIFY_PERMISSION (OPT_P_GENERAL);
+      options->tls_export_cert = p[1];
     }
   else if (streq (p[0], "tls-remote") && p[1])
     {
@@ -5855,6 +5919,15 @@ add_option (struct options *options,
 	}
       options->key_method = key_method;
     }
+#ifdef ENABLE_X509ALTUSERNAME
+  else if (streq (p[0], "x509-username-field") && p[1])
+    {
+      char *s = p[1];
+      VERIFY_PERMISSION (OPT_P_GENERAL);
+      while ((*s = toupper(*s)) != '\0') s++; /* Uppercase if necessary */
+      options->x509_username_field = p[1];
+    }
+#endif /* ENABLE_X509ALTUSERNAME */
 #endif /* USE_SSL */
 #endif /* USE_CRYPTO */
 #ifdef ENABLE_PKCS11
