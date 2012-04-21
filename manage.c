@@ -230,6 +230,24 @@ man_output_list_push_str (struct management *man, const char *str)
     }
 }
 
+#ifdef TARGET_ANDROID
+static void
+man_output_list_push_str_fd (struct management *man, const char *str, int fd)
+{
+  if (management_connected (man) && str && fd >= 0)
+    {
+      buffer_list_push_fd (man->connection.out, (const unsigned char *) str, fd);
+    }
+}
+
+static void
+man_output_list_push_fd (struct management *man, const char *str, int fd)
+{
+  man_output_list_push_str_fd (man, str, fd);
+  man_output_list_push_finalize (man);
+}
+#endif
+
 static void
 man_output_list_push (struct management *man, const char *str)
 {
@@ -613,6 +631,12 @@ man_up_finalize (struct management *man)
       if (strlen (man->connection.up_query.password))
 	man->connection.up_query.defined = true;
       break;
+#ifdef TARGET_ANDROID
+    case UP_QUERY_NEED_TUN:
+      if (strlen (man->connection.up_query.password))
+	man->connection.up_query.defined = true;
+      break;
+#endif
     case UP_QUERY_NEED_OK:
       if (strlen (man->connection.up_query.password))
 	man->connection.up_query.defined = true;
@@ -675,6 +699,17 @@ man_query_password (struct management *man, const char *type, const char *string
     string = blank_up;
   man_query_user_pass (man, type, string, needed, "password", man->connection.up_query.password, USER_PASS_LEN);
 }
+
+#ifdef TARGET_ANDROID
+static void
+man_query_need_tun (struct management *man, const char *type, const char *action, int *fd)
+{
+  const bool needed = ((man->connection.up_query_mode == UP_QUERY_NEED_TUN) && man->connection.up_query_type);
+  man->connection.up_query.tun = *fd;
+  *fd = -1;
+  man_query_user_pass (man, type, action, needed, "tun", man->connection.up_query.password, USER_PASS_LEN);
+}
+#endif
 
 static void
 man_query_need_ok (struct management *man, const char *type, const char *action)
@@ -1050,7 +1085,11 @@ man_http_proxy_fallback (struct management *man, const char *server, const char 
 #endif
 
 static void
+#ifdef TARGET_ANDROID
+man_dispatch_command (struct management *man, struct status_output *so, const char **p, const int nparms, int *fd)
+#else
 man_dispatch_command (struct management *man, struct status_output *so, const char **p, const int nparms)
+#endif
 {
   struct gc_arena gc = gc_new ();
 
@@ -1198,6 +1237,13 @@ man_dispatch_command (struct management *man, struct status_output *so, const ch
     {
       man_forget_passwords (man);
     }
+#ifdef TARGET_ANDROID
+  else if (streq (p[0], "tun"))
+    {
+      if (man_need (man, p, 2, 0))
+	man_query_need_tun (man, p[1], p[2], fd);
+    }
+#endif
   else if (streq (p[0], "needok"))
     {
       if (man_need (man, p, 2, 0))
@@ -1501,7 +1547,10 @@ man_listen (struct management *man)
       if (man->settings.flags & MF_UNIX_SOCK)
 	{
 	  man_delete_unix_socket (man);
-	  man->connection.sd_top = create_socket_unix ();
+	  if (man->settings.flags & MF_UNIX_SEQSOCK)
+	    man->connection.sd_top = create_socket_unix_seq ();
+	  else
+	    man->connection.sd_top = create_socket_unix ();
 	  socket_bind_unix (man->connection.sd_top, &man->settings.local_unix, "MANAGEMENT");
 	}
       else
@@ -1558,7 +1607,10 @@ man_connect (struct management *man)
 #if UNIX_SOCK_SUPPORT
   if (man->settings.flags & MF_UNIX_SOCK)
     {
-      man->connection.sd_cli = create_socket_unix ();
+      if (man->settings.flags & MF_UNIX_SEQSOCK)
+	man->connection.sd_cli = create_socket_unix_seq ();
+      else
+	man->connection.sd_cli = create_socket_unix ();
       status = socket_connect_unix (man->connection.sd_cli, &man->settings.local_unix);
       if (!status && !man_verify_unix_peer_uid_gid (man, man->connection.sd_cli))
 	  {
@@ -1657,7 +1709,11 @@ man_reset_client_socket (struct management *man, const bool exiting)
 }
 
 static void
+#ifdef TARGET_ANDROID
+man_process_command (struct management *man, const char *line, int *fd)
+#else
 man_process_command (struct management *man, const char *line)
+#endif
 {
   struct gc_arena gc = gc_new ();
   struct status_output *so;
@@ -1692,7 +1748,11 @@ man_process_command (struct management *man, const char *line)
 #endif
 
       if (nparms > 0)
+#ifdef TARGET_ANDROID
+	man_dispatch_command (man, so, (const char **)parms, nparms, fd);
+#else
 	man_dispatch_command (man, so, (const char **)parms, nparms);
+#endif
     }
 
   CLEAR (parms);
@@ -1718,6 +1778,82 @@ man_io_error (struct management *man, const char *prefix)
     return false;
 }
 
+#ifdef TARGET_ANDROID
+
+static ssize_t read_fd(int fd, void *ptr, size_t nbytes, int flags, int *recvfd)
+{
+  struct msghdr msghdr;
+  struct iovec iov[1];
+  ssize_t n;
+
+  union {
+    struct cmsghdr cm;
+    char     control[CMSG_SPACE(sizeof (int))];
+  } control_un;
+  struct cmsghdr  *cmptr;
+
+  msghdr.msg_control  = control_un.control;
+  msghdr.msg_controllen = sizeof(control_un.control);
+
+  msghdr.msg_name = NULL;
+  msghdr.msg_namelen = 0;
+
+  iov[0].iov_base = ptr;
+  iov[0].iov_len = nbytes;
+  msghdr.msg_iov = iov;
+  msghdr.msg_iovlen = 1;
+  msghdr.msg_flags = 0;
+
+  if ( (n = recvmsg(fd, &msghdr, flags)) <= 0)
+    return (n);
+
+  if ( (cmptr = CMSG_FIRSTHDR(&msghdr)) != NULL &&
+      cmptr->cmsg_len == CMSG_LEN(sizeof(int))) {
+    if (cmptr->cmsg_level != SOL_SOCKET)
+      msg (M_ERR, "control level != SOL_SOCKET");
+    if (cmptr->cmsg_type != SCM_RIGHTS)
+      msg (M_ERR, "control type != SCM_RIGHTS");
+    *recvfd = *((int *) CMSG_DATA(cmptr));
+  } else
+    *recvfd = -1;           /* descriptor was not passed */
+
+  return (n);
+}
+
+static ssize_t write_fd(int fd, void *ptr, size_t nbytes, int flags, int sendfd)
+{
+  struct msghdr msg;
+  struct iovec iov[1];
+
+  union {
+    struct cmsghdr cm;
+    char    control[CMSG_SPACE(sizeof(int))];
+  } control_un;
+  struct cmsghdr *cmptr;
+
+  msg.msg_control = control_un.control;
+  msg.msg_controllen = sizeof(control_un.control);
+
+  cmptr = CMSG_FIRSTHDR(&msg);
+  cmptr->cmsg_len = CMSG_LEN(sizeof(int));
+  cmptr->cmsg_level = SOL_SOCKET;
+  cmptr->cmsg_type = SCM_RIGHTS;
+  *((int *) CMSG_DATA(cmptr)) = sendfd;
+
+  msg.msg_name = NULL;
+  msg.msg_namelen = 0;
+
+  iov[0].iov_base = ptr;
+  iov[0].iov_len = nbytes;
+  msg.msg_iov = iov;
+  msg.msg_iovlen = 1;
+  msg.msg_flags = 0;
+
+  return (sendmsg(fd, &msg, flags));
+}
+
+#endif
+
 static int
 man_read (struct management *man)
 {
@@ -1725,9 +1861,16 @@ man_read (struct management *man)
    * read command line from socket
    */
   unsigned char buf[256];
+#ifdef TARGET_ANDROID
+  int fd = -1;
+#endif
   int len = 0;
 
+#ifdef TARGET_ANDROID
+  len = read_fd (man->connection.sd_cli, buf, sizeof (buf), MSG_NOSIGNAL, &fd);
+#else
   len = recv (man->connection.sd_cli, buf, sizeof (buf), MSG_NOSIGNAL);
+#endif
   if (len == 0)
     {
       man_reset_client_socket (man, false);
@@ -1737,7 +1880,11 @@ man_read (struct management *man)
       bool processed_command = false;
 
       ASSERT (len <= (int) sizeof (buf));
+#ifdef TARGET_ANDROID
+      command_line_add (man->connection.in, buf, len, fd);
+#else
       command_line_add (man->connection.in, buf, len);
+#endif
 
       /*
        * Reset output object
@@ -1766,12 +1913,20 @@ man_read (struct management *man)
 	      }
 	    else
 #endif
+#ifdef TARGET_ANDROID
+	      man_process_command (man, (char *) line, &fd);
+#else
 	      man_process_command (man, (char *) line);
+#endif
 	    if (man->connection.halt)
 	      break;
 	    command_line_next (man->connection.in);
 	    processed_command = true;
 	  }
+#ifdef TARGET_ANDROID
+	if (fd >= 0)
+		msg (M_FATAL, "Management leak received fd %d", fd);
+#endif
       }
 
       /*
@@ -1804,12 +1959,19 @@ man_write (struct management *man)
   int sent = 0;
   const struct buffer *buf;
 
+#ifndef TARGET_ANDROID
   buffer_list_aggregate(man->connection.out, size_hint);
+#endif
   buf = buffer_list_peek (man->connection.out);
   if (buf && BLEN (buf))
     {
       const int len = min_int (size_hint, BLEN (buf));
-      sent = send (man->connection.sd_cli, BPTR (buf), len, MSG_NOSIGNAL);
+#ifdef TARGET_ANDROID
+      if (buf->fd >= 0)
+	sent = write_fd (man->connection.sd_cli, BPTR (buf), len, MSG_NOSIGNAL, buf->fd);
+      else
+#endif
+	sent = send (man->connection.sd_cli, BPTR (buf), len, MSG_NOSIGNAL);
       if (sent >= 0)
 	{
 	  buffer_list_advance (man->connection.out, sent);
@@ -2389,6 +2551,35 @@ management_learn_addr (struct management *management,
 
 #endif
 
+#ifdef TARGET_ANDROID
+void
+management_echo_fd (struct management *man, const char *string, const bool pull, int fd)
+{
+  if (man->persist.echo)
+    {
+      struct gc_arena gc = gc_new ();
+      struct log_entry e;
+      const char *out = NULL;
+
+      update_time ();
+      CLEAR (e);
+      e.timestamp = now;
+      e.string = string;
+      e.u.intval = BOOL_CAST (pull);
+
+      log_history_add (man->persist.echo, &e);
+
+      if (man->connection.echo_realtime)
+	out = log_entry_print (&e, LOG_PRINT_INT_DATE|LOG_PRINT_ECHO_PREFIX|LOG_PRINT_CRLF|MANAGEMENT_ECHO_FLAGS, &gc);
+
+      if (out)
+	man_output_list_push_fd (man, out, fd);
+
+      gc_free (&gc);
+    }
+}
+#endif
+
 void
 management_echo (struct management *man, const char *string, const bool pull)
 {
@@ -2693,6 +2884,9 @@ man_standalone_event_loop (struct management *man, volatile int *signal_received
 
 #define MWCC_PASSWORD_WAIT (1<<0)
 #define MWCC_HOLD_WAIT     (1<<1)
+#ifdef TARGET_ANDROID
+#define MWCC_TUN_WAIT      (1<<2)
+#endif
 
 /*
  * Block until client connects
@@ -2710,6 +2904,10 @@ man_wait_for_client_connection (struct management *man,
 	msg (D_MANAGEMENT, "Need password(s) from management interface, waiting...");
       if (flags & MWCC_HOLD_WAIT)
 	msg (D_MANAGEMENT, "Need hold release from management interface, waiting...");
+#ifdef TARGET_ANDROID
+      if (flags & MWCC_TUN_WAIT)
+	msg (D_MANAGEMENT, "Need tun from management interface, waiting...");
+#endif
       do {
 	man_standalone_event_loop (man, signal_received, expire);
 	if (signal_received && *signal_received)
@@ -2788,6 +2986,15 @@ management_query_user_pass (struct management *man,
 
       CLEAR (man->connection.up_query);
 
+#ifdef TARGET_ANDROID
+      if (flags & GET_USER_PASS_NEED_TUN)
+	{
+	  up_query_mode = UP_QUERY_NEED_TUN;
+	  prefix= "NEED-TUN";
+	  alert_type = "confirmation";
+	}
+      else
+#endif
       if (flags & GET_USER_PASS_NEED_OK)
 	{
 	  up_query_mode = UP_QUERY_NEED_OK;
@@ -2872,6 +3079,35 @@ management_query_user_pass (struct management *man,
   gc_free (&gc);
   return ret;
 }
+
+#ifdef TARGET_ANDROID
+void
+management_echo_tun_info (struct management *man,
+			  int remote, /* socket to bypass route */
+			  bool redirect_gateway,
+			  const char *local_ip,
+			  const char *mtu,
+			  const char **routes,
+			  int route_len,
+			  const char **dns,
+			  int dns_len)
+{
+  int i;
+  management_echo_fd (man, "tun-protect", false, remote);
+  management_echo (man, local_ip, false);
+  management_echo (man, mtu, false);
+  if (redirect_gateway)
+      management_echo (man, "tun-redirect-gateway", false);
+  for (i = 0; i < route_len; ++i)
+    {
+      management_echo (man, routes[i], false);
+    }
+  for (i = 0; i < dns_len; ++i)
+    {
+      management_echo (man, dns[i], false);
+    }
+}
+#endif
 
 /*
  * Return true if management_hold() would block
@@ -2967,13 +3203,20 @@ command_line_free (struct command_line *cl)
 }
 
 void
+#ifdef TARGET_ANDROID
+command_line_add (struct command_line *cl, const unsigned char *buf, const int len, int fd)
+#else
 command_line_add (struct command_line *cl, const unsigned char *buf, const int len)
+#endif
 {
   int i;
   for (i = 0; i < len; ++i)
     {
       if (buf[i] && (isprint(buf[i]) || buf[i] == '\n'))
 	{
+#ifdef TARGET_ANDROID
+	  cl->buf.fd = fd;
+#endif
 	  if (!buf_write_u8 (&cl->buf, buf[i]))
 	    buf_clear (&cl->buf);
 	}

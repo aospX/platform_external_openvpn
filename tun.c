@@ -40,6 +40,9 @@
 #include "manage.h"
 #include "route.h"
 #include "win32.h"
+#ifdef TARGET_ANDROID
+#include "openvpn.h"
+#endif
 
 #include "memdbg.h"
 
@@ -607,7 +610,7 @@ do_ifconfig (struct tuntap *tt,
 #endif
 
 
-#if defined(TARGET_LINUX)
+#if defined(TARGET_LINUX) || defined(TARGET_ANDROID)
 #ifdef CONFIG_FEATURE_IPROUTE
 	/*
 	 * Set the MTU for the device
@@ -1075,7 +1078,7 @@ close_tun_generic (struct tuntap *tt)
 
 #endif
 
-#if defined(TARGET_LINUX)
+#if defined(TARGET_LINUX) || defined(TARGET_ANDROID)
 
 #ifdef HAVE_LINUX_IF_TUN_H	/* New driver support */
 
@@ -1112,6 +1115,60 @@ open_tun (const char *dev, const char *dev_type, const char *dev_node, bool ipv6
     {
       open_null (tt);
     }
+#ifdef TARGET_ANDROID
+  else if (strcmp(dev, "[[ANDROID]]") == 0)
+    {
+#ifdef ENABLE_MANAGEMENT
+      if (management) {
+	int i;
+	struct gc_arena gc = gc_new ();
+	struct user_pass up;
+	struct context *c = tt->options.c;
+	struct route_list *rl = c->c1.route_list;
+
+	struct buffer buf_ip = alloc_buf_gc (128, &gc);
+	buf_printf (&buf_ip, "tun-ip %s %s", print_in_addr_t (tt->local, 0, &gc), print_in_addr_t (tt->remote_netmask, 0, &gc));
+
+	struct buffer buf_mtu = alloc_buf_gc (128, &gc);
+	buf_printf (&buf_mtu, "tun-mtu %d", TUN_MTU_SIZE (&c->c2.frame));
+
+	const char **routes = gc_malloc (sizeof(const char*)*rl->n, false, &gc);
+	for (i = 0; i < rl->n; ++i)
+	  {
+	    struct route *r = &rl->routes[i];
+	    struct buffer buf = alloc_buf_gc (128, &gc);
+	    buf_printf (&buf, "tun-route %s %s", print_in_addr_t (r->network, 0, &gc), print_in_addr_t (r->netmask, 0, &gc));
+	    routes[i] = buf.data;
+	  }
+
+	const char **dns = gc_malloc (sizeof(const char*)*tt->options.dns_len, false, &gc);
+	for (i = 0; i < tt->options.dns_len; ++i)
+	  {
+	    struct buffer buf = alloc_buf_gc (128, &gc);
+	    buf_printf (&buf, "tun-dns %s", print_in_addr_t (tt->options.dns[i], 0, &gc));
+	    dns[i] = buf.data;
+	  }
+
+	management_echo_tun_info (management,
+	    c->c2.link_socket->sd, rl->flags & RG_REROUTE_GW,
+	    buf_ip.data, buf_mtu.data,
+	    routes, rl->n,
+	    dns, tt->options.dns_len);
+
+	up.defined = false;
+	up.nocache = false;
+	up.tun = -1;
+	management_query_user_pass (management, &up, "TUN", GET_USER_PASS_NEED_TUN);
+	if (up.tun >= 0)
+	  tt->fd = up.tun;
+	else
+	  msg (M_WARN, "Note: Cannot open Android TUN dev");
+	gc_free (&gc);
+      } else
+	msg (M_FATAL, "Android TUN require management interface");
+#endif
+    }
+#endif
   else
     {
       /*

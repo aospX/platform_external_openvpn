@@ -386,7 +386,7 @@
 #define HAVE_SYS_TYPES_H 1
 
 /* Define to 1 if you have the <sys/uio.h> header file. */
-#define HAVE_SYS_UIO_H 1
+/* #define HAVE_SYS_UIO_H 1 */
 
 /* Define to 1 if you have the <sys/un.h> header file. */
 #define HAVE_SYS_UN_H 1
@@ -503,7 +503,7 @@
 /* #undef TARGET_FREEBSD */
 
 /* Are we running on Linux? */
-#define TARGET_LINUX 1
+/* #undef TARGET_LINUX */
 
 /* Are we running NetBSD? */
 /* #undef TARGET_NETBSD */
@@ -516,6 +516,9 @@
 
 /* Are we running WIN32? */
 /* #undef TARGET_WIN32 */
+
+/* Are we running on Android? */
+#define TARGET_ANDROID 1
 
 /* Define to 1 if you can safely include both <sys/time.h> and <time.h>. */
 #define TIME_WITH_SYS_TIME 1

@@ -15,7 +15,7 @@ int set_lladdr(const char *ifname, const char *lladdr,
   if (!ifname || !lladdr)
     return -1;
   
-#if defined(TARGET_LINUX)
+#if defined(TARGET_LINUX) || defined (TARGET_ANDROID)
 #ifdef CONFIG_FEATURE_IPROUTE
   argv_printf (&argv,
 		    "%s link set addr %s dev %s",

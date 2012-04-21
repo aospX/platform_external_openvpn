@@ -2701,6 +2701,16 @@ sockaddr_unix_name (const struct sockaddr_un *local, const char *null)
 }
 
 socket_descriptor_t
+create_socket_unix_seq (void)
+{
+  socket_descriptor_t sd;
+
+  if ((sd = socket (PF_UNIX, SOCK_SEQPACKET, 0)) < 0)
+    msg (M_SOCKERR, "Cannot create unix domain socket");
+  return sd;
+}
+
+socket_descriptor_t
 create_socket_unix (void)
 {
   socket_descriptor_t sd;

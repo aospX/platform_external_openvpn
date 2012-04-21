@@ -948,6 +948,9 @@ show_tuntap_options (const struct tuntap_options *o)
 }
 
 #endif
+#endif
+
+#if defined(WIN32) || defined(TARGET_ANDROID)
 
 static void
 dhcp_option_address_parse (const char *name, const char *parm, in_addr_t *array, int *len, int msglevel)
@@ -3620,6 +3623,16 @@ add_option (struct options *options,
 	  goto err;
 #endif
 	}
+      if (streq (p[2], "unixseq"))
+	{
+#if UNIX_SOCK_SUPPORT
+	  options->management_flags |= MF_UNIX_SOCK;
+	  options->management_flags |= MF_UNIX_SEQSOCK;
+#else
+	  msg (msglevel, "MANAGEMENT: this platform does not support unix domain sockets");
+	  goto err;
+#endif
+	}
       else
 	{
 	  port = atoi (p[2]);
@@ -5418,6 +5431,22 @@ add_option (struct options *options,
   else if (streq (p[0], "dhcp-option") && p[1])
     {
       VERIFY_PERMISSION (OPT_P_IPWIN32);
+#ifdef TARGET_ANDROID
+      struct tuntap_options *o = &options->tuntap_options;
+      if (streq (p[1], "DOMAIN") && p[2])
+	{
+	  o->domain = p[2];
+	}
+      else if (streq (p[1], "DNS") && p[2])
+	{
+	  dhcp_option_address_parse ("DNS", p[2], o->dns, &o->dns_len, msglevel);
+	}
+      else
+	{
+	  msg (msglevel, "--dhcp-option ignore option %s", p[1]);
+	}
+      o->dhcp_options = true;
+#endif
       foreign_option (options, p, 3, es);
     }
   else if (streq (p[0], "route-method") && p[1]) /* ignore when pushed to non-Windows OS */

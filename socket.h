@@ -413,6 +413,7 @@ socket_descriptor_t socket_do_accept (socket_descriptor_t sd,
 
 #if UNIX_SOCK_SUPPORT
 
+socket_descriptor_t create_socket_unix_seq (void);
 socket_descriptor_t create_socket_unix (void);
 
 void socket_bind_unix (socket_descriptor_t sd,

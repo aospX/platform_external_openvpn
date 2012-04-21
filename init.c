@@ -1284,6 +1284,9 @@ do_open_tun (struct context *c)
 	  do_ifconfig (c->c1.tuntap, guess, TUN_MTU_SIZE (&c->c2.frame), c->c2.es);
 	}
 
+#ifdef TARGET_ANDROID
+      c->c1.tuntap->options.c = c;
+#endif
       /* open the tun device */
       open_tun (c->options.dev, c->options.dev_type, c->options.dev_node,
 		c->options.tun_ipv6, c->c1.tuntap);

@@ -79,6 +79,9 @@ alloc_buf_gc (size_t size, struct gc_arena *gc)
 #else
   buf.data = (uint8_t *) gc_malloc (size, false, gc);
 #endif
+#ifdef TARGET_ANDROID
+  buf.fd = -1;
+#endif
   if (size)
     *buf.data = 0;
   return buf;
@@ -99,6 +102,9 @@ clone_buf (const struct buffer* buf)
   ret.data = (uint8_t *) openvpn_dmalloc (file, line, buf->capacity);
 #else
   ret.data = (uint8_t *) malloc (buf->capacity);
+#endif
+#ifdef TARGET_ANDROID
+  ret.fd = buf->fd;
 #endif
   check_malloc_return (ret.data);
   memcpy (BPTR (&ret), BPTR (buf), BLEN (buf));
@@ -141,6 +147,9 @@ buf_clear (struct buffer *buf)
     memset (buf->data, 0, buf->capacity);
   buf->len = 0;
   buf->offset = 0;
+#ifdef TARGET_ANDROID
+  buf->fd = -1;
+#endif
 }
 
 bool
@@ -148,14 +157,30 @@ buf_assign (struct buffer *dest, const struct buffer *src)
 {
   if (!buf_init (dest, src->offset))
     return false;
+#ifdef TARGET_ANDROID
+  dest->fd = src->fd;
+#endif
   return buf_write (dest, BPTR (src), BLEN (src));
 }
+
+#ifdef TARGET_ANDROID
+void
+prepare_buf (struct buffer *buf)
+{
+  CLEAR (*buf);
+  buf->fd = -1;
+}
+#endif
 
 struct buffer
 clear_buf ()
 {
   struct buffer buf;
+#ifdef TARGET_ANDROID
+  prepare_buf (&buf);
+#else
   CLEAR (buf);
+#endif
   return buf;
 }
 
@@ -164,7 +189,11 @@ free_buf (struct buffer *buf)
 {
   if (buf->data)
     free (buf->data);
+#ifdef TARGET_ANDROID
+  prepare_buf (buf);
+#else
   CLEAR (*buf);
+#endif
 }
 
 /*
@@ -176,7 +205,11 @@ buf_sub (struct buffer *buf, int size, bool prepend)
   struct buffer ret;
   uint8_t *data;
 
+#ifdef TARGET_ANDROID
+  prepare_buf (&ret);
+#else
   CLEAR (ret);
+#endif
   data = prepend ? buf_prepend (buf, size) : buf_write_alloc (buf, size);
   if (data)
     {
@@ -881,6 +914,18 @@ valign4 (const struct buffer *buf, const char *file, const int line)
 
 #ifdef ENABLE_BUFFER_LIST
 
+#ifdef TARGET_ANDROID
+static struct buffer_entry *
+alloc_buffer_entry (void)
+{
+  struct buffer_entry *e = NULL;
+  ALLOC_OBJ (e, struct buffer_entry);
+  prepare_buf (&e->buf);
+  e->next = NULL;
+  return e;
+}
+#endif
+
 struct buffer_list *
 buffer_list_new (const int max_size)
 {
@@ -922,6 +967,22 @@ buffer_list_reset (struct buffer_list *ol)
   ol->size = 0;
 }
 
+#ifdef TARGET_ANDROID
+void
+buffer_list_push_fd (struct buffer_list *ol, const unsigned char *str, int fd)
+{
+  if (str)
+    {
+      const size_t len = strlen ((const char *)str);
+      struct buffer_entry *e = buffer_list_push_data (ol, str, len+1);
+      if (e) {
+	e->buf.fd = fd;
+	e->buf.len = len; /* Don't count trailing '\0' as part of length */
+      }
+    }
+}
+#endif
+
 void
 buffer_list_push (struct buffer_list *ol, const unsigned char *str)
 {
@@ -940,7 +1001,11 @@ buffer_list_push_data (struct buffer_list *ol, const uint8_t *data, size_t size)
   struct buffer_entry *e = NULL;
   if (data && (!ol->max_size || ol->size < ol->max_size))
     {
+#ifdef TARGET_ANDROID
+      e = alloc_buffer_entry ();
+#else
       ALLOC_OBJ_CLEAR (e, struct buffer_entry);
+#endif
 
       ++ol->size;
       if (ol->tail)
@@ -989,7 +1054,11 @@ buffer_list_aggregate (struct buffer_list *bl, const size_t max)
 	  int i;
 	  struct buffer_entry *e = bl->head, *f;
 
+#ifdef TARGET_ANDROID
+	  f = alloc_buffer_entry ();
+#else
 	  ALLOC_OBJ_CLEAR (f, struct buffer_entry);
+#endif
 	  f->buf.data = malloc (size);
 	  check_malloc_return (f->buf.data);
 	  f->buf.capacity = size;

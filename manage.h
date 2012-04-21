@@ -68,7 +68,11 @@ struct command_line
 struct command_line *command_line_new (const int buf_len);
 void command_line_free (struct command_line *cl);
 
+#ifdef TARGET_ANDROID
+void command_line_add (struct command_line *cl, const unsigned char *buf, const int len, int fd);
+#else
 void command_line_add (struct command_line *cl, const unsigned char *buf, const int len);
+#endif
 const unsigned char *command_line_get (struct command_line *cl);
 void command_line_reset (struct command_line *cl);
 void command_line_next (struct command_line *cl);
@@ -239,6 +243,9 @@ struct man_settings {
 #define UP_QUERY_PASS      2
 #define UP_QUERY_NEED_OK   3
 #define UP_QUERY_NEED_STR  4
+#ifdef TARGET_ANDROID
+#define UP_QUERY_NEED_TUN  5
+#endif
 
 /* states */
 #define MS_INITIAL          0  /* all sockets are closed */
@@ -314,6 +321,7 @@ struct management *management_init (void);
 # define MF_CLIENT_PF         (1<<7)
 #endif
 # define MF_UNIX_SOCK       (1<<8)
+# define MF_UNIX_SEQSOCK      (1<<9)
 
 bool management_open (struct management *man,
 		      const char *addr,
@@ -347,6 +355,9 @@ void management_set_callback (struct management *man,
 void management_clear_callback (struct management *man);
 
 bool management_query_user_pass (struct management *man, struct user_pass *up, const char *type, const unsigned int flags);
+#ifdef TARGET_ANDROID
+void management_echo_tun_info (struct management *man, int remote, bool redirect_gateway, const char *local_ip, const char *mtu, const char **routes, int route_len, const char **dns, int dns_len);
+#endif
 
 bool management_should_daemonize (struct management *man);
 bool management_would_hold (struct management *man);

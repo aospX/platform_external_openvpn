@@ -862,7 +862,7 @@ add_route (struct route *r, const struct tuntap *tt, unsigned int flags, const s
       goto done;
     }
 
-#if defined(TARGET_LINUX)
+#if defined(TARGET_LINUX) || defined(TARGET_ANDROID)
 #ifdef CONFIG_FEATURE_IPROUTE
   argv_printf (&argv, "%s route add %s/%d via %s",
   	      iproute_path,
@@ -1044,7 +1044,7 @@ delete_route (const struct route *r, const struct tuntap *tt, unsigned int flags
   netmask = print_in_addr_t (r->netmask, 0, &gc);
   gateway = print_in_addr_t (r->gateway, 0, &gc);
 
-#if defined(TARGET_LINUX)
+#if defined(TARGET_LINUX) || defined(TARGET_ANDROID)
 #ifdef CONFIG_FEATURE_IPROUTE
   argv_printf (&argv, "%s route del %s/%d",
   	      iproute_path,
@@ -1529,7 +1529,7 @@ show_routes (int msglev)
   gc_free (&gc);
 }
 
-#elif defined(TARGET_LINUX)
+#elif defined(TARGET_LINUX) || defined(TARGET_ANDROID)
 
 bool
 get_default_gateway (in_addr_t *gateway, in_addr_t *netmask)
@@ -2205,7 +2205,7 @@ get_bypass_addresses (struct route_bypass *rb, const unsigned int flags)  /* PLA
 
 #if AUTO_USERID || defined(ENABLE_PUSH_PEER_INFO)
 
-#if defined(TARGET_LINUX)
+#if defined(TARGET_LINUX) || defined(TARGET_ANDROID)
 
 bool
 get_default_gateway_mac_addr (unsigned char *macaddr)

@@ -109,6 +109,25 @@ struct tuntap_options {
   int txqueuelen;
 };
 
+#elif TARGET_ANDROID
+
+
+struct tuntap_options {
+  struct context *c;
+
+  int txqueuelen;
+  bool dhcp_options;
+
+  const char *domain;        /* DOMAIN (15) */
+
+#define N_DHCP_ADDR 4        /* Max # of addresses allowed for
+			        DNS, WINS, etc. */
+
+  /* DNS (6) */
+  in_addr_t dns[N_DHCP_ADDR];
+  int dns_len;
+};
+
 #else
 
 struct tuntap_options {
@@ -270,7 +289,7 @@ tun_adjust_frame_parameters (struct frame* frame, int size)
 static inline int
 ifconfig_order(void)
 {
-#if defined(TARGET_LINUX)
+#if defined(TARGET_LINUX) || defined(TARGET_ANDROID)
   return IFCONFIG_AFTER_TUN_OPEN;
 #elif defined(TARGET_SOLARIS)
   return IFCONFIG_AFTER_TUN_OPEN;

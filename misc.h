@@ -259,6 +259,9 @@ struct user_pass
 # endif
   char username[USER_PASS_LEN];
   char password[USER_PASS_LEN];
+#ifdef TARGET_ANDROID
+  int tun;
+#endif
 };
 
 #ifdef ENABLE_CLIENT_CR
@@ -293,6 +296,9 @@ bool get_console_input (const char *prompt, const bool echo, char *input, const 
 #define GET_USER_PASS_NOFATAL       (1<<4)
 #define GET_USER_PASS_NEED_STR      (1<<5)
 #define GET_USER_PASS_PREVIOUS_CREDS_FAILED (1<<6)
+#ifdef TARGET_ANDROID
+#define GET_USER_PASS_NEED_TUN       (1<<7)
+#endif
 
 bool get_user_pass_cr (struct user_pass *up,
 		       const char *auth_file,

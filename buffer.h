@@ -51,6 +51,10 @@ struct buffer
   int len;	   /* length of data that starts at data + offset */
   uint8_t *data;
 
+#ifdef TARGET_ANDROID
+  int fd;
+#endif
+
 #ifdef BUF_INIT_TRACKING
   const char *debug_file;
   int debug_line;
@@ -203,6 +207,9 @@ buf_reset (struct buffer *buf)
   buf->offset = 0;
   buf->len = 0;
   buf->data = NULL;
+#ifdef TARGET_ANDROID
+  buf->fd = -1;
+#endif
 }
 
 static inline void
@@ -210,6 +217,9 @@ buf_reset_len (struct buffer *buf)
 {
   buf->len = 0;
   buf->offset = 0;
+#ifdef TARGET_ANDROID
+  buf->fd = -1;
+#endif
 }
 
 static inline bool
@@ -219,6 +229,9 @@ buf_init_dowork (struct buffer *buf, int offset)
     return false;
   buf->len = 0;
   buf->offset = offset;
+#ifdef TARGET_ANDROID
+  buf->fd = -1;
+#endif
   return true;
 }
 
@@ -231,6 +244,9 @@ buf_set_write (struct buffer *buf, uint8_t *data, int size)
   buf->offset = 0;
   buf->capacity = size;
   buf->data = data;
+#ifdef TARGET_ANDROID
+  buf->fd = -1;
+#endif
   if (size > 0 && data)
     *data = 0;
 }
@@ -243,6 +259,9 @@ buf_set_read (struct buffer *buf, const uint8_t *data, int size)
   buf->len = buf->capacity = size;
   buf->offset = 0;
   buf->data = (uint8_t *)data;
+#ifdef TARGET_ANDROID
+  buf->fd = -1;
+#endif
 }
 
 /* Like strncpy but makes sure dest is always null terminated */
@@ -514,6 +533,9 @@ buf_write_u32 (struct buffer *dest, int data)
 static inline bool
 buf_copy (struct buffer *dest, const struct buffer *src)
 {
+#ifdef TARGET_ANDROID
+  dest->fd = src->fd;
+#endif
   return buf_write (dest, BPTR (src), BLEN (src));
 }
 
@@ -850,6 +872,9 @@ bool buffer_list_defined (const struct buffer_list *ol);
 void buffer_list_reset (struct buffer_list *ol);
 
 void buffer_list_push (struct buffer_list *ol, const unsigned char *str);
+#ifdef TARGET_ANDROID
+void buffer_list_push_fd (struct buffer_list *ol, const unsigned char *str, int fd);
+#endif
 struct buffer_entry *buffer_list_push_data (struct buffer_list *ol, const uint8_t *data, size_t size);
 struct buffer *buffer_list_peek (struct buffer_list *ol);
 void buffer_list_advance (struct buffer_list *ol, int n);
